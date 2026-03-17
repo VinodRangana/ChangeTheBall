@@ -1,0 +1,10 @@
+# Ignore the entire virtual environment
+venv/
+
+# Ignore the compiled Python files
+__pycache__/
+*.pyc
+
+# Ignore your heavy images (protects your GitHub storage)
+data/raw/
+data/processed/
