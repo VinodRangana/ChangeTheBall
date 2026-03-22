@@ -8,3 +8,4 @@ __pycache__/
 # Ignore your heavy images (protects your GitHub storage)
 data/raw/
 data/processed/
+notebook/interim
