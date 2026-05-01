@@ -1,12 +1,15 @@
 class CricketBall:
-    def __init__(self, id, overs_bowled,top, front, side , ):
+    def __init__(self, id, overs_bowled,top, front, s_side ,r_side , back, bottom ):
         self.ball_id = id
         self.overs_bowled = overs_bowled
 
         self.org_img_path = {
             "top" : top,
             "front" : front,
-            "side" : side
+            "shine-side" : s_side,
+            "rough-side" : r_side,
+            "back" : back,
+            "bottom" :bottom
         }
 
         self.enhanced_img = {
