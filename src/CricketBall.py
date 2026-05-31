@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from typing import Dict
 import cv2
@@ -21,6 +22,26 @@ class CricketBall:
     # Final Output
     final_score: float = 0.0
     status: str = "UNGRADED"
+
+    #to create ball object
+    @classmethod
+    def from_folder(cls, ball_id: str, folder_path: str, overs: int):
+        print(f"Loading data for {ball_id}...")
+        
+        # 'cls' is a Python keyword that refers to the class itself (CricketBall).
+        # We create the empty object first.
+        new_ball = cls(ball_id=ball_id, overs_bowled=overs)
+        
+        expected_views = ['top', 'bottom', 'front', 'back', 'rough', 'smooth']
+        
+        for view in expected_views:
+            file_path = f"{folder_path}/raw_{view}.jpg"
+            if os.path.exists(file_path):
+                new_ball.raw_images[view] = file_path
+            else:
+                print(f"  -> WARNING: Missing {view} image.")
+                
+        return new_ball
 
     # Lazy-Loading Display Function
     def display_result(self, view_name: str):
