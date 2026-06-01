@@ -124,3 +124,107 @@ class SeamCalculator:
         # ==========================================
         # We return a perfectly straight, cropped, binarized image containing ONLY the seam
         return final_clean_seam
+
+
+    def calculate_continuity(self, binary_seam):
+        """
+        Executes the 8-Step Continuity Algorithm to grade the integrity of the seam.
+        Returns a float between 0.0 (Destroyed) and 1.0 (Perfect).
+        """
+        height, width = binary_seam.shape[:2]
+
+        # ==========================================
+        # STEP 1: Define the Dynamic Noise Threshold
+        # ==========================================
+        # 1.5% of the physical cropped ball height
+        noise_threshold = int(height * 0.015) 
+        
+        # ==========================================
+        # STEP 2: Connected Components Scan
+        # ==========================================
+        # connectivity=8 means pixels touching diagonally count as the same piece
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_seam, connectivity=8)
+
+        # ==========================================
+        # STEP 3: The Noise Purge
+        # ==========================================
+        valid_fragments = []
+        clean_seam_mask = np.zeros_like(binary_seam)
+
+        # We start loop at 1 because label 0 is always the black background
+        for i in range(1, num_labels):
+            fragment_height = stats[i, cv2.CC_STAT_HEIGHT]
+            
+            # Only keep fragments larger than the noise threshold
+            if fragment_height >= noise_threshold:
+                valid_fragments.append({
+                    'label': i,
+                    'height': fragment_height,
+                    'top': stats[i, cv2.CC_STAT_TOP],
+                    'bottom': stats[i, cv2.CC_STAT_TOP] + fragment_height
+                })
+                # Draw the valid fragment onto our clean mask
+                clean_seam_mask[labels == i] = 255
+
+        # FAILSAFE: If no fragments survived (the seam is completely gone)
+        if len(valid_fragments) == 0:
+            return 0.0
+
+        # ==========================================
+        # STEP 4: Establish the Total Seam Span
+        # ==========================================
+        # Find the absolute highest pixel and lowest pixel of the valid fragments
+        min_top = min(frag['top'] for frag in valid_fragments)
+        max_bottom = max(frag['bottom'] for frag in valid_fragments)
+        
+        total_span = max_bottom - min_top
+        
+        # FAILSAFE: Prevent division by zero if somehow the span is 0
+        if total_span <= 0:
+            return 0.0
+
+        # ==========================================
+        # STEP 5: Calculate Base Density 
+        # ==========================================
+        # Slice the clean mask to only look at the exact vertical span of the seam
+        seam_span_image = clean_seam_mask[min_top:max_bottom, :]
+        
+        # Count how many horizontal rows contain at least one white pixel (255)
+        # np.max(axis=1) returns the highest pixel value in each row. 
+        row_maxes = np.max(seam_span_image, axis=1)
+        rows_with_thread = np.count_nonzero(row_maxes > 0)
+        
+        base_density = rows_with_thread / total_span
+
+        # ==========================================
+        # STEP 6: Measure the Dominant Backbone
+        # ==========================================
+        # Find the single tallest fragment
+        tallest_fragment_height = max(frag['height'] for frag in valid_fragments)
+        backbone_ratio = tallest_fragment_height / total_span
+
+        # ==========================================
+        # STEP 7: Apply the Fragmentation Penalty
+        # ==========================================
+        num_valid_fragments = len(valid_fragments)
+        
+        # 0 penalty if there is exactly 1 fragment. 5% penalty for every extra break.
+        fragment_penalty = max(0, num_valid_fragments - 1) * 0.05
+
+        # ==========================================
+        # STEP 8: Final Score Fusion & Failsafes
+        # ==========================================
+        final_score = base_density - fragment_penalty
+        
+        # Structural Failure Check: If the longest piece is less than 30% of the seam,
+        # the ball will wobble uncontrollably. Apply a massive 30% penalty.
+        if backbone_ratio < 0.30:
+            final_score -= 0.30
+
+        # Clamp the math so it strictly stays between 0.0 and 1.0
+        final_score = max(0.0, min(1.0, final_score))
+
+        # (Optional: Print the internal metrics to the console for debugging)
+        print(f"    -> Continuity: Density={base_density:.2f}, Fragments={num_valid_fragments}, Backbone={backbone_ratio:.2f} | Score={final_score:.2f}")
+
+        return final_score

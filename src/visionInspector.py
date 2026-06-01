@@ -3,6 +3,7 @@ import os
 
 from calculators.segmentationCalculator import SegmentationCalculator
 from calculators.roundnessCalculator import RoundnessCalculator
+from calculators.seamCalculator import SeamCalculator
 from cricketBall import CricketBall  
 
 class VisionInspector:
@@ -10,7 +11,7 @@ class VisionInspector:
         # Initialize the classes that hold the heavy math
         self.seg_calc = SegmentationCalculator()
         self.roundness_calc = RoundnessCalculator()
-        # self.seam_calc = SeamCalculator()
+        self.seam_calc = SeamCalculator()
 
     # --- THE WRAPPER FUNCTIONS ---
 
@@ -71,6 +72,52 @@ class VisionInspector:
             ball.roundness_score = 0.0
             
         print(f"-> Final Roundness Grade: {ball.roundness_score:.3f}")
+
+
+    def calculate_seam(self, ball: CricketBall):
+        print(f"Calculating Seam Integrity for {ball.ball_id}...")
+        
+        seam_scores = {}
+        
+        # We only care about the 4 main views for the seam (ignore rough/smooth sides)
+        for view in ['top', 'bottom', 'front', 'back']:
+            # Grab the saved FILE PATHS from Phase 1
+            crop_path = ball.cropped_images.get(view)
+            mask_path = ball.masks.get(view)
+            
+            if not crop_path or not mask_path:
+                print(f"    -> WARNING: Missing {view} view paths. Skipping.")
+                continue
+                
+            # Load the images from the hard drive into NumPy arrays
+            img_array = cv2.imread(crop_path)
+            # Ensure the mask is loaded strictly as Grayscale (1 channel)
+            mask_array = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE) 
+            
+            if img_array is not None and mask_array is not None:
+                # Run the Master Orchestrator from SeamCalculator
+                score = self.seam_calc.grade_seam(img_array, mask_array)
+                seam_scores[view] = score
+                print(f"    -> {view} view scored: {score:.3f}")
+            else:
+                print(f"    -> ERROR: Could not load saved images for {view}.")
+
+        # Veto Rule & Averages
+        if not seam_scores:
+            ball.seam_integrity_score = 0.0
+            return
+
+        lowest_side = min(seam_scores, key=seam_scores.get)
+        lowest_score = seam_scores[lowest_side]
+        
+        if lowest_score < self.seam_calc.min_passing_score:
+            print(f"CRITICAL REJECTION: The {lowest_side.upper()} seam failed.")
+            ball.seam_integrity_score = 0.0
+        else:
+            total_score = sum(seam_scores.values())
+            ball.seam_integrity_score = total_score / len(seam_scores)
+            
+        print(f"-> Final Seam Grade: {ball.seam_integrity_score:.3f}")
 
 
     def calculate_final_grade(self, ball: CricketBall):
