@@ -5,6 +5,7 @@ class SegmentationCalculator:
     def __init__(self):
         # The Morphological kernel remains static, as it is based on physical pixel size
         self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        self.crop_padding = 20
 
 
     def _get_dynamic_cyan_bounds(self, hsv_img):
@@ -60,8 +61,33 @@ class SegmentationCalculator:
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
             cv2.drawContours(final_mask, [largest_contour], -1, 255, thickness=-1)
+
+            # --- NEW: PADDED BOUNDING BOX CROP ---
             
-        # 7. Create the Isolated Ball
-        isolated_ball = cv2.bitwise_and(raw_img_array, raw_img_array, mask=final_mask)
-        
-        return final_mask, isolated_ball
+            # A. Get the physical dimensions of the full raw image
+            img_height, img_width = raw_img_array.shape[:2]
+            
+            # B. Get the mathematical bounding box of the ball (x, y, width, height)
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            
+            # C. Calculate the padded coordinates. 
+            # SAFETY NET: We use max() and min() so the crop doesn't try to go off the screen
+            # if the ball is touching the absolute edge of the original photo.
+            x1 = max(0, x - self.crop_padding)
+            y1 = max(0, y - self.crop_padding)
+            x2 = min(img_width, x + w + self.crop_padding)
+            y2 = min(img_height, y + h + self.crop_padding)
+            
+            # D. Apply the Mask to get the Isolated Ball
+            isolated_ball = cv2.bitwise_and(raw_img_array, raw_img_array, mask=final_mask)
+            
+            # E. Crop BOTH the mask and the image using NumPy Array Slicing
+            cropped_final_mask = final_mask[y1:y2, x1:x2]
+            cropped_isolated_ball = isolated_ball[y1:y2, x1:x2]
+            
+            return cropped_final_mask, cropped_isolated_ball
+            
+        else:
+            # Failsafe: If no ball was found, just return the uncropped blank arrays
+            isolated_ball = cv2.bitwise_and(raw_img_array, raw_img_array, mask=final_mask)
+            return final_mask, isolated_ball
