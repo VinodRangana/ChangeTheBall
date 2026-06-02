@@ -4,6 +4,7 @@ import os
 from calculators.segmentationCalculator import SegmentationCalculator
 from calculators.roundnessCalculator import RoundnessCalculator
 from calculators.seamCalculator import SeamCalculator
+from calculators.roughnessCalculator import RoughnessCalculator
 from cricketBall import CricketBall  
 
 class VisionInspector:
@@ -12,6 +13,7 @@ class VisionInspector:
         self.seg_calc = SegmentationCalculator()
         self.roundness_calc = RoundnessCalculator()
         self.seam_calc = SeamCalculator()
+        self.roughness_calc = RoughnessCalculator();
 
     # --- THE WRAPPER FUNCTIONS ---
 
@@ -118,6 +120,54 @@ class VisionInspector:
             ball.seam_integrity_score = total_score / len(seam_scores)
             
         print(f"-> Final Seam Grade: {ball.seam_integrity_score:.3f}")
+
+
+    def calculate_roughness(self, ball: CricketBall):
+        """
+        Wrapper function to evaluate the surface degradation on the rough/shine sides.
+        """
+        print(f"Calculating Surface Roughness for {ball.ball_id}...")
+        
+        roughness_scores = {}
+        
+        # We only care about the sides showing the "cheeks" of the ball for this phase
+        for view in ['rough', 'shine']: 
+            crop_path = ball.cropped_images.get(view)
+            mask_path = ball.masks.get(view)
+            
+            if not crop_path or not mask_path:
+                print(f"    -> WARNING: Missing {view} view paths. Skipping.")
+                continue
+                
+            img_array = cv2.imread(crop_path)
+            mask_array = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            
+            if img_array is not None and mask_array is not None:
+                # Call our Master Orchestrator!
+                score = self.roughness_calc.grade_roughness(img_array, mask_array)
+                roughness_scores[view] = score
+                print(f"    -> {view} view scored: {score:.3f}")
+            else:
+                print(f"    -> ERROR: Could not load saved images for {view}.")
+
+        # --- Aggregation Rule ---
+        if not roughness_scores:
+            ball.roughness_score = 0.0
+            return
+
+        # Check for Critical Failure (If one side is completely torn apart, the ball fails)
+        lowest_side = min(roughness_scores, key=roughness_scores.get)
+        lowest_score = roughness_scores[lowest_side]
+        
+        if lowest_score < self.roughness_calc.min_passing_score:
+            print(f"CRITICAL REJECTION: The {lowest_side.upper()} surface is critically damaged.")
+            ball.roughness_score = 0.0
+        else:
+            # Otherwise, average the health of both sides
+            total_score = sum(roughness_scores.values())
+            ball.roughness_score = total_score / len(roughness_scores)
+            
+        print(f"-> Final Surface Roughness Grade: {ball.roughness_score:.3f}")
 
 
     def calculate_final_grade(self, ball: CricketBall):
