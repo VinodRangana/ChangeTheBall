@@ -227,15 +227,27 @@ class VisionInspector:
 
 
     def calculate_final_grade(self, ball: CricketBall):
-        # Your custom algorithm to weigh the final score
-        weighted_score = (ball.seam_integrity_score * 0.4) + \
-                         (ball.roughness_score * 0.4) + \
-                         (ball.color_score * 0.2)
+        # 1. Safely fetch the scores (Defaults to 0.0 if a calculator failed/crashed)
+        seam_score = getattr(ball, 'seam_integrity_score', 0.0)
+        rough_score = getattr(ball, 'roughness_score', 0.0)
+        color_score = getattr(ball, 'color_score', 0.0)
+        roundness_score = getattr(ball, 'roundness_score', 0.0)
+        
+        # 2. Convert from 0.0-1.0 scale to a 0-100 Percentage scale!
+        seam_percentage = seam_score * 100
+        rough_percentage = rough_score * 100
+        color_percentage = color_score * 100
+
+        # 3. Apply the custom algorithm
+        weighted_score = (seam_percentage * 0.4) + \
+                         (rough_percentage * 0.4) + \
+                         (color_percentage * 0.2)
         
         ball.final_score = weighted_score
         
-        # Set Status based on thresholds
-        if ball.final_score > 75.0 and ball.roundness_score > 0.95:
+        # 4. Set Status based on thresholds
+        # Now comparing a percentage (e.g., 85.0) against 75.0 works perfectly!
+        if ball.final_score > 75.0 and roundness_score > 0.95:
             ball.status = "NO NEED TO CHANGE"
         else:
             ball.status = "CHANGE BALL"
@@ -248,10 +260,10 @@ class VisionInspector:
         self.run_segmentation(ball) 
         
         # 2. Run the Feature Wrappers (Assuming these are written elsewhere in your class)
-        # self.calculate_roundness(ball)
-        # self.calculate_seam(ball)
-        # self.calculate_roughness(ball)
-        # self.calculate_color(ball)
+        self.calculate_roundness(ball)
+        self.calculate_seam(ball)
+        self.calculate_roughness(ball)
+        self.calculate_color(ball)
         
         # 3. Calculate Final Grade
         self.calculate_final_grade(ball)
