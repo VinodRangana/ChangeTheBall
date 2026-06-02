@@ -5,6 +5,7 @@ from calculators.segmentationCalculator import SegmentationCalculator
 from calculators.roundnessCalculator import RoundnessCalculator
 from calculators.seamCalculator import SeamCalculator
 from calculators.roughnessCalculator import RoughnessCalculator
+from calculators.colorCalculator import ColorCalculator
 from cricketBall import CricketBall  
 
 class VisionInspector:
@@ -13,7 +14,8 @@ class VisionInspector:
         self.seg_calc = SegmentationCalculator()
         self.roundness_calc = RoundnessCalculator()
         self.seam_calc = SeamCalculator()
-        self.roughness_calc = RoughnessCalculator();
+        self.roughness_calc = RoughnessCalculator()
+        self.color_calc = ColorCalculator()
 
     # --- THE WRAPPER FUNCTIONS ---
 
@@ -168,6 +170,60 @@ class VisionInspector:
             ball.roughness_score = total_score / len(roughness_scores)
             
         print(f"-> Final Surface Roughness Grade: {ball.roughness_score:.3f}")
+
+    
+    def calculate_color(self, ball: CricketBall):
+        """
+        Wrapper function to evaluate the overall Visibility (Color & Brightness).
+        """
+        print(f"Calculating Color Visibility for {ball.ball_id}...")
+        
+        color_scores = {}
+        
+        # Visibility heavily depends on the "cheeks" of the ball
+        for view in ['rough', 'shine']: 
+            crop_path = ball.cropped_images.get(view)
+            mask_path = ball.masks.get(view)
+            
+            if not crop_path or not mask_path:
+                print(f"    -> WARNING: Missing {view} view paths. Skipping.")
+                continue
+                
+            img_array = cv2.imread(crop_path)
+            # Ensure the full_ball_mask is strictly 1-channel Grayscale
+            mask_array = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            
+            if img_array is not None and mask_array is not None:
+                score = self.color_calc.grade_color(img_array, mask_array)
+                color_scores[view] = score
+            else:
+                print(f"    -> ERROR: Could not load saved images for {view}.")
+
+        # --- Aggregation Rule ---
+        if not color_scores:
+            ball.color_score = 0.0
+            return
+
+        shine_score = color_scores.get('shine', 0.0)
+        rough_score = color_scores.get('rough', 0.0)
+        critical_failure = False
+
+        # Apply the Umpire's Thresholds
+        if shine_score < self.color_calc.min_pass_shine:
+            print(f"CRITICAL REJECTION: The SHINY side is too dark/muddy ({shine_score:.2f}).")
+            critical_failure = True
+            
+        if rough_score < self.color_calc.min_pass_rough:
+            print(f"CRITICAL REJECTION: The ROUGH side is completely invisible ({rough_score:.2f}).")
+            critical_failure = True
+
+        if critical_failure:
+            ball.color_score = 0.0
+        else:
+            # The ball's overall visibility is the average of both sides
+            ball.color_score = (shine_score + rough_score) / 2.0
+            
+        print(f"-> Final Color Visibility Grade: {ball.color_score:.3f}")
 
 
     def calculate_final_grade(self, ball: CricketBall):
